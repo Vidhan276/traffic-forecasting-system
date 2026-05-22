@@ -639,6 +639,25 @@ with tab_map:
     if load_map or st.session_state.get("load_traffic_map"):
         selected_map = CURRENT_MAP if map_choice == "Current traffic" else PREDICTED_MAP
         selected_html = _read_html(selected_map)
+        
+        if not selected_html:
+            with st.spinner("Generating Pune Traffic Maps... (this may take up to 20 seconds on first run)"):
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        [sys.executable, "ml/predict.py"],
+                        cwd=str(BASE_DIR),
+                        capture_output=True,
+                        text=True,
+                        timeout=90
+                    )
+                    if result.returncode == 0:
+                        selected_html = _read_html(selected_map)
+                    else:
+                        st.error(f"Failed to generate maps (exit code {result.returncode}): {result.stderr}")
+                except Exception as e:
+                    st.error(f"Error executing prediction pipeline: {e}")
+
         if selected_html:
             st.markdown('<div class="map-wrapper">', unsafe_allow_html=True)
             components.html(selected_html, height=540, scrolling=False)
@@ -657,14 +676,6 @@ with tab_map:
                 """, unsafe_allow_html=True)
     else:
         st.info("Full city maps are loaded on demand to keep the dashboard responsive.")
-
-    if False:
-        st.markdown("""
-        <div class="api-warning">
-            📁 No traffic map HTML files found. Run the prediction pipeline:<br>
-            <code>venv\\Scripts\\python.exe ml/predict.py</code>
-        </div>
-        """, unsafe_allow_html=True)
 
     # Legend
     st.markdown("""
