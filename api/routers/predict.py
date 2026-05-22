@@ -4,7 +4,11 @@ import logging
 from datetime import datetime, timezone
 
 import numpy as np
+import folium
+import osmnx as ox
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.concurrency import run_in_threadpool
 
 from api.schemas import PredictNodesRequest, PredictNodesResponse
 
@@ -63,3 +67,175 @@ async def predict_nodes(
     except Exception as e:
         logger.exception("Error in /predict_nodes")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Optimized Map Generation served directly from Backend ────────────────────
+
+def _generate_backend_map(app, is_predicted: bool) -> str:
+    forecast_svc = app.state.forecast_svc
+    routing_svc = app.state.routing_svc
+    
+    if forecast_svc is None or routing_svc is None:
+        raise HTTPException(status_code=503, detail="Services not initialized")
+        
+    G = routing_svc.G
+    node_list = forecast_svc.node_list
+    
+    if is_predicted:
+        pred_unnorm = forecast_svc.predict()
+        traffic_values = pred_unnorm[:, 0]
+        title = "🔮 Pune Traffic — Predicted (15 min ahead)"
+    else:
+        traffic_values = forecast_svc.get_current_traffic()
+        title = "🚗 Pune Traffic — Current State"
+        
+    # Normalize traffic values to [0, 1] for coloring
+    t_min, t_max = traffic_values.min(), traffic_values.max()
+    if t_max > t_min:
+        norm_values = (traffic_values - t_min) / (t_max - t_min)
+    else:
+        norm_values = np.ones_like(traffic_values) * 0.5
+
+    # Build a lookup: node_id -> normalized traffic value
+    traffic_dict = {}
+    for i, node_id in enumerate(node_list):
+        if i < len(norm_values):
+            traffic_dict[node_id] = float(norm_values[i])
+        else:
+            traffic_dict[node_id] = 0.2
+
+    # Get node/edge GeoDataFrames for coordinates
+    nodes_gdf, edges_gdf = ox.graph_to_gdfs(G)
+
+    # Center of the map
+    center_lat = nodes_gdf["y"].mean()
+    center_lon = nodes_gdf["x"].mean()
+
+    # Create the Folium map
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=15,
+        tiles="cartodbpositron"
+    )
+
+    # Add a title
+    title_html = f"""
+    <div style="position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+                z-index: 1000; background: white; padding: 8px 16px; border-radius: 6px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-family: Arial, sans-serif;
+                font-size: 14px; font-weight: bold;">
+        {title}
+    </div>
+    """
+    m.get_root().html.add_child(folium.Element(title_html))
+
+    # Google Maps traffic colors
+    TRAFFIC_COLORS = [
+        (0.0,  "#34A853"),   # Green
+        (0.25, "#FBBC04"),   # Yellow
+        (0.50, "#F9AB00"),   # Orange
+        (0.75, "#EA4335"),   # Red
+        (1.0,  "#C5221F"),   # Dark Red
+    ]
+
+    def get_traffic_color(value):
+        value = max(0.0, min(1.0, value))
+        for i in range(len(TRAFFIC_COLORS) - 1):
+            low_val, low_color = TRAFFIC_COLORS[i]
+            high_val, high_color = TRAFFIC_COLORS[i + 1]
+            if low_val <= value <= high_val:
+                t = (value - low_val) / (high_val - low_val) if high_val > low_val else 0
+                r1, g1, b1 = int(low_color[1:3], 16), int(low_color[3:5], 16), int(low_color[5:7], 16)
+                r2, g2, b2 = int(high_color[1:3], 16), int(high_color[3:5], 16), int(high_color[5:7], 16)
+                r = int(r1 + t * (r2 - r1))
+                g = int(g1 + t * (g2 - g1))
+                b = int(b1 + t * (b2 - b1))
+                return f"#{r:02x}{g:02x}{b:02x}"
+        return TRAFFIC_COLORS[-1][1]
+
+    # Group coordinates by (color, weight) to minimize Leaflet DOM output size from 18MB to 5MB
+    group_map = {}
+
+    for _, row in edges_gdf.reset_index().iterrows():
+        u = row["u"]
+        v = row["v"]
+        val = (traffic_dict.get(u, 0.3) + traffic_dict.get(v, 0.3)) / 2
+
+        highway = row.get("highway", "residential")
+        if isinstance(highway, list):
+            highway = highway[0]
+
+        if highway in ["motorway", "trunk"]:
+            val += 0.25
+            weight = 8
+        elif highway in ["primary"]:
+            val += 0.20
+            weight = 7
+        elif highway in ["secondary"]:
+            val += 0.10
+            weight = 6
+        elif highway in ["tertiary"]:
+            val -= 0.05
+            weight = 5
+        else:
+            val -= 0.15
+            weight = 3
+
+        val = max(0.0, min(1.0, val))
+        color = get_traffic_color(val)
+        coords = [(y, x) for x, y in row["geometry"].coords]
+        
+        group_key = (color, weight)
+        if group_key not in group_map:
+            group_map[group_key] = []
+        group_map[group_key].append(coords)
+
+    # Add grouped multi-polylines to the map
+    for (color, weight), coords_list in group_map.items():
+        if coords_list:
+            folium.PolyLine(
+                coords_list,
+                color=color,
+                weight=weight,
+                opacity=0.85
+            ).add_to(m)
+
+    # Add the legend
+    legend_html = """
+    <div style="position: fixed; bottom: 30px; left: 30px; z-index: 1000;
+                background: white; padding: 12px 16px; border-radius: 8px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-family: Arial, sans-serif;">
+        <b style="font-size: 13px;">Traffic Level</b><br>
+        <div style="margin-top: 6px;">
+            <span style="background:#34A853; width:18px; height:12px; display:inline-block; border-radius:2px;"></span>
+            <span style="font-size:11px;"> Free Flow</span><br>
+            <span style="background:#FBBC04; width:18px; height:12px; display:inline-block; border-radius:2px;"></span>
+            <span style="font-size:11px;"> Light Traffic</span><br>
+            <span style="background:#F9AB00; width:18px; height:12px; display:inline-block; border-radius:2px;"></span>
+            <span style="font-size:11px;"> Moderate</span><br>
+            <span style="background:#EA4335; width:18px; height:12px; display:inline-block; border-radius:2px;"></span>
+            <span style="font-size:11px;"> Heavy Traffic</span><br>
+            <span style="background:#C5221F; width:18px; height:12px; display:inline-block; border-radius:2px;"></span>
+            <span style="font-size:11px;"> Severe Congestion</span>
+        </div>
+    </div>
+    """
+    m.get_root().html.add_child(folium.Element(legend_html))
+
+    return m._repr_html_()
+
+
+@router.get("/maps/current", response_class=HTMLResponse)
+async def get_current_map(request: Request):
+    if not hasattr(request.app.state, "current_map_html") or request.app.state.current_map_html is None:
+        html = await run_in_threadpool(_generate_backend_map, request.app, False)
+        request.app.state.current_map_html = html
+    return HTMLResponse(content=request.app.state.current_map_html)
+
+
+@router.get("/maps/predicted", response_class=HTMLResponse)
+async def get_predicted_map(request: Request):
+    if not hasattr(request.app.state, "predicted_map_html") or request.app.state.predicted_map_html is None:
+        html = await run_in_threadpool(_generate_backend_map, request.app, True)
+        request.app.state.predicted_map_html = html
+    return HTMLResponse(content=request.app.state.predicted_map_html)
