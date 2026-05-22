@@ -15,22 +15,30 @@ are independent of the number of nodes — they process per-node features.
 Run from project root:  python ml/predict.py
 """
 
+import sys
 import torch
 import pickle
 import numpy as np
 import osmnx as ox
 import folium
+from pathlib import Path
+
+_ROOT = Path(__file__).parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from torch_geometric.utils import from_networkx
-from model import TrafficGNN
 from dataset import load_scaler
+from data.loader import load_config
+from models.factory import build_model
 
 # ──────────────────────────────────────────────────────────────
 # Configuration
 # ──────────────────────────────────────────────────────────────
-SEQ_LEN    = 12       # must match training
-PRED_LEN   = 3
-HIDDEN_DIM = 32
+cfg = load_config()
+SEQ_LEN    = cfg["model"]["seq_len"]
+PRED_LEN   = cfg["model"]["pred_len"]
+HIDDEN_DIM = cfg["model"]["hidden_dim"]
 
 # Google Maps traffic colors (green=free, red=jam)
 TRAFFIC_COLORS = [
@@ -92,7 +100,7 @@ current_traffic_raw = traffic_input[-1]   # last known timestep, un-normalized
 print("Loading trained model...")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model = TrafficGNN(seq_len=SEQ_LEN, hidden_dim=HIDDEN_DIM, pred_len=PRED_LEN).to(device)
+model = build_model(cfg["model"]).to(device)
 model.load_state_dict(torch.load("ml/traffic_model.pth", map_location=device, weights_only=True))
 model.eval()
 
