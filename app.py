@@ -608,44 +608,7 @@ st.markdown(f"""
         <div class="time-sub" id="live-date">{now.strftime('%a, %d %b %Y')}</div>
     </div>
 </div>
-
-<img src="x" onerror="
-    if (!window.clockIntervalSet) {{
-        window.clockIntervalSet = true;
-        const updateClock = () => {{
-            const clock = document.getElementById('live-clock');
-            const dateEl = document.getElementById('live-date');
-            if (clock && dateEl) {{
-                const now = new Date();
-                const formatter = new Intl.DateTimeFormat('en-US', {{
-                    timeZone: 'Asia/Kolkata',
-                    weekday: 'short',
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: true
-                }});
-                const parts = formatter.formatToParts(now);
-                const partMap = {{}};
-                parts.forEach(p => partMap[p.type] = p.value);
-                
-                let hour = partMap.hour;
-                if (hour.length === 1) {{
-                    hour = '0' + hour;
-                }}
-                const timeStr = hour + ':' + partMap.minute + ' ' + partMap.dayPeriod;
-                const dateStr = partMap.weekday + ', ' + partMap.day + ' ' + partMap.month + ' ' + partMap.year;
-                
-                clock.textContent = timeStr;
-                dateEl.textContent = dateStr;
-            }}
-        }};
-        setInterval(updateClock, 1000);
-        updateClock();
-    }}
-" style="display:none;">
+<img src="x" onerror="if(!window.clockIntervalSet){{window.clockIntervalSet=true;const updateClock=()=>{{const clock=document.getElementById('live-clock');const dateEl=document.getElementById('live-date');if(clock&&dateEl){{const now=new Date();const formatter=new Intl.DateTimeFormat('en-US',{{timeZone:'Asia/Kolkata',weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}});const parts=formatter.formatToParts(now);const partMap={{}};parts.forEach(p=>partMap[p.type]=p.value);let hour=partMap.hour;if(hour.length===1){{hour='0'+hour;}}const timeStr=hour+':'+partMap.minute+' '+partMap.dayPeriod;const dateStr=partMap.weekday+', '+partMap.day+' '+partMap.month+' '+partMap.year;clock.textContent=timeStr;dateEl.textContent=dateStr;}}}};setInterval(updateClock,1000);updateClock();}}" style="display:none;">
 """, unsafe_allow_html=True)
 
 tab_map, tab_route, tab_perf, tab_forecast = st.tabs([
