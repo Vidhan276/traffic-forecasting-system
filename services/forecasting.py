@@ -158,6 +158,7 @@ class ForecastingService:
     def _load_last_sequence(self) -> np.ndarray:
         """Read last seq_len timesteps efficiently via memory-map."""
         from data.loader import load_last_sequence
-        raw = load_last_sequence(self.cfg)
+        key = "full_traffic_data" if len(self.node_list) > 5000 else "traffic_data"
+        raw = load_last_sequence(self.cfg, key=key)
         # Normalise
         return (raw - self.scaler["mean"]) / self.scaler["std"]

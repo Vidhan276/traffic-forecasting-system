@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 
 import numpy as np
 import folium
-import osmnx as ox
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.concurrency import run_in_threadpool
@@ -104,12 +103,11 @@ def _generate_backend_map(app, is_predicted: bool) -> str:
         else:
             traffic_dict[node_id] = 0.2
 
-    # Get node/edge GeoDataFrames for coordinates
-    nodes_gdf, edges_gdf = ox.graph_to_gdfs(G)
-
-    # Center of the map
-    center_lat = nodes_gdf["y"].mean()
-    center_lon = nodes_gdf["x"].mean()
+    # Center of the map calculated directly from NetworkX nodes to save memory
+    lats = [d["y"] for n, d in G.nodes(data=True) if "y" in d]
+    lons = [d["x"] for n, d in G.nodes(data=True) if "x" in d]
+    center_lat = sum(lats) / len(lats) if lats else 18.52
+    center_lon = sum(lons) / len(lons) if lons else 73.855
 
     # Create the Folium map
     m = folium.Map(
@@ -156,12 +154,11 @@ def _generate_backend_map(app, is_predicted: bool) -> str:
     # Group coordinates by (color, weight) to minimize Leaflet DOM output size from 18MB to 5MB
     group_map = {}
 
-    for _, row in edges_gdf.reset_index().iterrows():
-        u = row["u"]
-        v = row["v"]
+    # Iterate directly over NetworkX edges to bypass heavy OSMnx DataFrame conversion
+    for u, v, data in G.edges(data=True):
         val = (traffic_dict.get(u, 0.3) + traffic_dict.get(v, 0.3)) / 2
 
-        highway = row.get("highway", "residential")
+        highway = data.get("highway", "residential")
         if isinstance(highway, list):
             highway = highway[0]
 
@@ -183,7 +180,16 @@ def _generate_backend_map(app, is_predicted: bool) -> str:
 
         val = max(0.0, min(1.0, val))
         color = get_traffic_color(val)
-        coords = [(y, x) for x, y in row["geometry"].coords]
+        
+        # Get coordinates from edge geometry or fallback to straight line
+        geom = data.get("geometry")
+        if geom:
+            coords = [(y, x) for x, y in geom.coords]
+        else:
+            coords = [
+                (G.nodes[u]["y"], G.nodes[u]["x"]),
+                (G.nodes[v]["y"], G.nodes[v]["x"])
+            ]
         
         group_key = (color, weight)
         if group_key not in group_map:

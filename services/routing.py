@@ -35,7 +35,6 @@ from typing import Any
 
 import networkx as nx
 import numpy as np
-import osmnx as ox
 from scipy.spatial import cKDTree
 
 logger = logging.getLogger(__name__)
@@ -139,12 +138,13 @@ class RoutingService:
         edge_refs = []
         self._edge_uv = []
 
-        for u, v, k, data in self.G.edges(keys=True, data=True):
+        for i, (u, v, k, data) in enumerate(self.G.edges(keys=True, data=True)):
             u_idx_list.append(self._forecast_idx_by_node[u])
             v_idx_list.append(self._forecast_idx_by_node[v])
             lengths_list.append(float(data.get("length", 50.0)))
             edge_refs.append((u, v, k, data))
             self._edge_uv.append((u, v))
+            data["idx"] = i
             
         self._u_idx_arr = np.array(u_idx_list, dtype=np.int32)
         self._v_idx_arr = np.array(v_idx_list, dtype=np.int32)
@@ -197,26 +197,39 @@ class RoutingService:
         origin_node = self._nearest_route_node[origin_name]
         dest_node = self._nearest_route_node[dest_name]
 
-        self._assign_dynamic_costs(current_traffic, predicted_traffic)
+        # Compute dynamic costs without modifying edge dicts (prevents memory leaks)
+        now_costs = self._edge_time_costs(current_traffic)
+        future_costs = self._edge_time_costs(predicted_traffic)
+        balanced_costs = self._bal_dist_w * self._lengths_arr + self._bal_cong_w * future_costs
+
+        # Define custom weight functions for astar_path
+        def weight_now(u, v, edge_data_dict):
+            return min(float(now_costs[data["idx"]]) for data in edge_data_dict.values())
+
+        def weight_future(u, v, edge_data_dict):
+            return min(float(future_costs[data["idx"]]) for data in edge_data_dict.values())
+
+        def weight_balanced(u, v, edge_data_dict):
+            return min(float(balanced_costs[data["idx"]]) for data in edge_data_dict.values())
 
         results: list[RouteResult] = []
 
         variants = [
-            ("Fastest Now",    "cost_now",      current_traffic,   predicted_traffic),
-            ("Fastest 15-min", "cost_future",   current_traffic,   predicted_traffic),
-            ("Balanced",       "cost_balanced", current_traffic,   predicted_traffic),
+            ("Fastest Now",    weight_now,      current_traffic,   predicted_traffic),
+            ("Fastest 15-min", weight_future,   current_traffic,   predicted_traffic),
+            ("Balanced",       weight_balanced, current_traffic,   predicted_traffic),
         ]
 
         seen_routes: set[tuple[int, ...]] = set()  # deduplicate identical paths
 
-        for label, weight_attr, cur_t, pred_t in variants:
+        for label, weight_fn, cur_t, pred_t in variants:
             try:
                 path = nx.astar_path(
                     self.G,
                     origin_node,
                     dest_node,
                     heuristic=self._travel_time_heuristic,
-                    weight=weight_attr,
+                    weight=weight_fn,
                 )
             except nx.NetworkXNoPath:
                 logger.warning("No path found for %s -> %s (%s)", origin_name, dest_name, label)
@@ -263,10 +276,18 @@ class RoutingService:
         }
 
     def _build_location_node_lookup(self) -> dict[str, int]:
-        return {
-            name: ox.distance.nearest_nodes(self.G, lon, lat)
-            for name, (lat, lon) in self._locations.items()
-        }
+        nodes = list(self.G.nodes)
+        coords = np.array(
+            [(self.G.nodes[node]["y"], self.G.nodes[node]["x"]) for node in nodes],
+            dtype=np.float64,
+        )
+        tree = cKDTree(coords)
+        
+        lookup = {}
+        for name, (lat, lon) in self._locations.items():
+            _, idx = tree.query([lat, lon])
+            lookup[name] = int(nodes[idx])
+        return lookup
 
     def _travel_time_heuristic(self, u: int, v: int) -> float:
         u_node = self.G.nodes[u]
@@ -279,19 +300,7 @@ class RoutingService:
         distance_m = 6371000.0 * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
         return distance_m / (self._free_flow_kmh / 3.6)
 
-    def _assign_dynamic_costs(
-        self,
-        current_traffic: np.ndarray,
-        predicted_traffic: np.ndarray,
-    ) -> None:
-        now_costs = self._edge_time_costs(current_traffic)
-        future_costs = self._edge_time_costs(predicted_traffic)
-        balanced_costs = self._bal_dist_w * self._lengths_arr + self._bal_cong_w * future_costs
 
-        for i, (_, _, _, data) in enumerate(self._edge_refs):
-            data["cost_now"] = float(now_costs[i])
-            data["cost_future"] = float(future_costs[i])
-            data["cost_balanced"] = float(balanced_costs[i])
 
     def _edge_time_costs(self, node_traffic: np.ndarray) -> np.ndarray:
         t_ext = np.clip(node_traffic, 0.0, 1.0)

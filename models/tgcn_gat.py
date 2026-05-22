@@ -17,7 +17,7 @@ drop-in replacement inside train_model.py and the FastAPI service.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GATConv
+from .layers import PurePyTorchGATConv as GATConv
 
 
 class TrafficGNN_GAT(nn.Module):

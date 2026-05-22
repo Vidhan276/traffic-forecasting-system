@@ -63,6 +63,8 @@ def _warm_route_cache_background(routing_svc, cur_norm, pred_norm) -> None:
             except Exception as exc:
                 logger.debug("Route cache warmup skipped %s -> %s: %s", origin, destination, exc)
     logger.info("Background route cache warmup complete: %d pairs", warmed)
+    import gc
+    gc.collect()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

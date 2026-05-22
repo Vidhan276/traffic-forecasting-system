@@ -42,3 +42,6 @@ EDI/
 data/pune_traffic_data.npy
 pune_traffic_data.npy
 
+# Temporary scratch folder
+scratch/
+

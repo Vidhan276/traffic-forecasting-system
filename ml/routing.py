@@ -4,7 +4,7 @@ import networkx as nx
 import osmnx as ox
 import folium
 import math
-from torch_geometric.utils import from_networkx
+from data.loader import graph_to_edge_index
 
 # Predefined locations in Pune for fast lookup
 PUNE_LOCATIONS = {
@@ -92,14 +92,8 @@ def generate_route_forecast(G, model, scaler, traffic_data, origin_name, dest_na
     # Run model
     x_seq = torch.tensor(traffic_norm, dtype=torch.float32).unsqueeze(-1).to(device)
     
-    # Strip attributes for PyG conversion (only if not already done)
-    G_clean = G.copy()
-    for node in G_clean.nodes:
-        G_clean.nodes[node].clear()
-    for u, v, k in G_clean.edges(keys=True):
-        G_clean.edges[u, v, k].clear()
-        
-    edge_index = from_networkx(G_clean).edge_index.to(device)
+    # Prepare edge_index from graph
+    edge_index = graph_to_edge_index(G).to(device)
     
     model.eval()
     with torch.no_grad():

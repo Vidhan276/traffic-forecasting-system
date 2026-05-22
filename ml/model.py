@@ -16,7 +16,7 @@ After processing all timesteps, a linear layer predicts the future.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv
+from models.layers import PurePyTorchGCNConv as GCNConv
 
 
 class TrafficGNN(nn.Module):

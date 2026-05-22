@@ -94,23 +94,23 @@ def load_graph(cfg: dict, key: str = "subgraph"):
 
 def graph_to_edge_index(G) -> torch.Tensor:
     """
-    Convert a NetworkX graph to a PyTorch Geometric edge_index tensor.
+    Convert a NetworkX graph to an edge_index tensor.
 
-    Strips all node and edge attributes first so PyG conversion is clean.
+    Strips all node and edge attributes first (implicitly by direct index extraction)
+    so the conversion is clean and returns a COO-formatted edge list.
 
     Returns:
         edge_index tensor of shape (2, num_edges).
     """
-    from torch_geometric.utils import from_networkx
+    node_to_idx = {node: i for i, node in enumerate(G.nodes)}
 
-    G_clean = G.copy()
-    for node in G_clean.nodes:
-        G_clean.nodes[node].clear()
-    for u, v, k in G_clean.edges(keys=True):
-        G_clean.edges[u, v, k].clear()
+    sources = []
+    targets = []
+    for u, v in G.edges():
+        sources.append(node_to_idx[u])
+        targets.append(node_to_idx[v])
 
-    data = from_networkx(G_clean)
-    return data.edge_index
+    return torch.tensor([sources, targets], dtype=torch.long)
 
 
 # ── Traffic Data Loading ───────────────────────────────────────────────────────
@@ -130,11 +130,11 @@ def load_traffic(cfg: dict, key: str = "traffic_data") -> np.ndarray:
     return np.load(str(path))
 
 
-def load_last_sequence(cfg: dict, seq_len: int | None = None) -> np.ndarray:
+def load_last_sequence(cfg: dict, key: str = "traffic_data", seq_len: int | None = None) -> np.ndarray:
     """
     Load only the last ``seq_len`` timesteps using memory-mapped access.
 
-    This avoids loading the full ~1 GB city-wide data file into RAM.
+    This avoids loading the full dataset into RAM.
 
     Returns:
         numpy array of shape (seq_len, num_nodes).
@@ -142,12 +142,17 @@ def load_last_sequence(cfg: dict, seq_len: int | None = None) -> np.ndarray:
     if seq_len is None:
         seq_len = cfg["model"]["seq_len"]
 
-    # Try city-wide data first, fall back to subgraph data
-    for key in ("full_traffic_data", "traffic_data"):
-        path = resolve_path(cfg, key)
-        if path.exists():
-            data = np.load(str(path), mmap_mode="r")
-            return np.array(data[-seq_len:])
+    path = resolve_path(cfg, key)
+    if path.exists():
+        data = np.load(str(path), mmap_mode="r")
+        return np.array(data[-seq_len:])
+
+    # Fallback to the other key if specified one does not exist
+    fallback_key = "traffic_data" if key == "full_traffic_data" else "full_traffic_data"
+    path = resolve_path(cfg, fallback_key)
+    if path.exists():
+        data = np.load(str(path), mmap_mode="r")
+        return np.array(data[-seq_len:])
 
     raise FileNotFoundError(
         "Neither traffic_data nor full_traffic_data found. "

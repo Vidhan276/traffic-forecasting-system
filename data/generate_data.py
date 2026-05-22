@@ -161,7 +161,7 @@ def generate_traffic(graph_path, output_path):
     # ──────────────────────────────────────────────────────────────
     # 9. Save the dataset
     # ──────────────────────────────────────────────────────────────
-    np.save(output_path, traffic_data.astype(np.float32))
+    np.save(output_path, np.ascontiguousarray(traffic_data.astype(np.float32)))
 
     print(f"\nTraffic dataset saved to {output_path}")
     print(f"Shape: {traffic_data.shape}  (timesteps × nodes)")

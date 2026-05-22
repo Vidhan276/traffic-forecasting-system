@@ -27,9 +27,8 @@ _ROOT = Path(__file__).parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from torch_geometric.utils import from_networkx
 from dataset import load_scaler
-from data.loader import load_config
+from data.loader import load_config, graph_to_edge_index
 from models.factory import build_model
 
 # ──────────────────────────────────────────────────────────────
@@ -63,15 +62,8 @@ with open("graph/graph_data.pkl", "rb") as f:
 num_nodes = len(G.nodes)
 print(f"Pune graph: {num_nodes} nodes, {len(G.edges)} edges")
 
-# Prepare a clean copy for PyG (strip attributes)
-G_clean = G.copy()
-for node in G_clean.nodes:
-    G_clean.nodes[node].clear()
-for u, v, k in G_clean.edges(keys=True):
-    G_clean.edges[u, v, k].clear()
-
-data = from_networkx(G_clean)
-edge_index = data.edge_index
+# Prepare edge_index from graph
+edge_index = graph_to_edge_index(G)
 
 # ──────────────────────────────────────────────────────────────
 # 2. Load traffic data and apply scaler
