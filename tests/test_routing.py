@@ -145,7 +145,9 @@ class TestRoutingServiceEdgeCosts:
         import unittest.mock as mock
         import osmnx as ox
         self._ox_patch = mock.patch.object(ox, "graph_to_gdfs", side_effect=_mock_graph_to_gdfs)
+        self._nn_patch = mock.patch.object(ox.distance, "nearest_nodes", side_effect=_mock_nearest_nodes)
         self._ox_patch.start()
+        self._nn_patch.start()
 
         G = _make_small_graph()
         node_list = list(G.nodes)
@@ -154,6 +156,7 @@ class TestRoutingServiceEdgeCosts:
 
     def teardown_method(self):
         self._ox_patch.stop()
+        self._nn_patch.stop()
 
     def test_weights_are_positive(self):
         traffic = np.full(5, 0.3)   # 30% traffic

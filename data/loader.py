@@ -66,6 +66,28 @@ def load_graph(cfg: dict, key: str = "subgraph"):
     path = resolve_path(cfg, key)
     with open(path, "rb") as f:
         G = pickle.load(f)
+        
+    # ── Memory Optimization (Critical for Render 512MB limit) ────────────────
+    # Strip unnecessary node attributes
+    allowed_node_attrs = {"x", "y"}
+    for node in G.nodes:
+        node_data = G.nodes[node]
+        keys_to_delete = [k for k in node_data if k not in allowed_node_attrs]
+        for k in keys_to_delete:
+            del node_data[k]
+            
+    # Strip unnecessary edge attributes (saves massive dictionary overhead for 320k edges)
+    allowed_edge_attrs = {"length", "highway", "name", "geometry"}
+    for u, v, k in G.edges(keys=True):
+        edge_data = G.edges[u, v, k]
+        keys_to_delete = [key_attr for key_attr in edge_data if key_attr not in allowed_edge_attrs]
+        for key_attr in keys_to_delete:
+            del edge_data[key_attr]
+            
+    import gc
+    gc.collect()
+    # ─────────────────────────────────────────────────────────────────────────
+
     node_list = list(G.nodes)
     return G, node_list
 

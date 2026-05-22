@@ -68,10 +68,14 @@ def _warm_route_cache_background(routing_svc, cur_norm, pred_norm) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 # Lifespan — load everything once at startup
 # ═══════════════════════════════════════════════════════════════════════════════
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load model and services on startup; clean up on shutdown."""
+    import torch
+    import gc
+    torch.set_num_threads(1)
+    gc.collect()
+
     logger.info("=" * 60)
     logger.info("Traffic Forecasting API — starting up")
     logger.info("=" * 60)
