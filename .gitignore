@@ -1,0 +1,44 @@
+# Virtual environments (highly critical to ignore to avoid uploading hundreds of MBs)
+venv/
+.venv/
+.venv-1/
+.venv1/
+
+# Python compiled cache files
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary cache and IDE directories
+.pytest_cache/
+.vscode/
+.idea/
+cache/
+
+# Large local log files
+*.log
+api.log
+api.err.log
+streamlit.log
+streamlit.err.log
+
+# Large generated visualization files (avoids exceeding Git/GitHub limits)
+*.html
+pune_current_traffic.html
+pune_predicted_traffic.html
+pune_traffic_map.html
+kothrud_current_traffic.html
+kothrud_predicted_traffic.html
+kothrud_traffic_map.html
+
+# Local environment configuration file
+.env
+
+# Extra EDI folder
+EDI/
+
+# Large NumPy dataset files (1.09 GB)
+data/pune_traffic_data.npy
+pune_traffic_data.npy
+

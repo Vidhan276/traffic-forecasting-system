@@ -1,0 +1,71 @@
+# =============================================================================
+#  Traffic Forecasting System — Central Configuration
+#  Edit this file to change model type, hyperparameters, or file paths.
+# =============================================================================
+
+# ── Model ─────────────────────────────────────────────────────────────────────
+model:
+  # Choices: "tgcn_gcn"  (original GCN-based, for ablation)
+  #          "tgcn_gat"  (GAT-enhanced, recommended)
+  type: "tgcn_gat"
+
+  hidden_dim: 32          # hidden feature size for GCN/GAT layers
+  num_heads: 4            # number of attention heads (GAT only)
+  seq_len: 12             # input window = 12 × 5 min = 1 hour of history
+  pred_len: 3             # forecast horizon: 3 × 5 min = 15 minutes ahead
+                          # can be set to 6 (30 min) or 12 (60 min)
+
+# ── Training ──────────────────────────────────────────────────────────────────
+training:
+  epochs: 200
+  patience: 20            # early stopping: stop if no val improvement for N epochs
+  lr: 0.005               # initial learning rate
+  lr_patience: 10         # ReduceLROnPlateau patience
+  lr_factor: 0.5          # ReduceLROnPlateau factor
+  batch_sample: 64        # number of random windows sampled per epoch
+  val_sample: 32          # number of windows sampled for validation per epoch
+
+# ── Metrics ───────────────────────────────────────────────────────────────────
+metrics:
+  mape_epsilon: 0.1       # clip denominator to avoid division by near-zero
+
+# ── Routing ───────────────────────────────────────────────────────────────────
+routing:
+  free_flow_kmh: 30.0     # assumed free-flow speed for urban Pune (km/h)
+  jam_factor: 0.7         # speed reduction at max congestion: speed = free_flow × (1 - 0.7 × traffic)
+  # Route variant weights
+  balanced_dist_weight: 0.5
+  balanced_cong_weight: 0.5
+
+  # Named Pune locations (lat, lon)
+  locations:
+    Shivajinagar:  [18.5325915, 73.8513115]
+    "Viman Nagar": [18.5703877, 73.9133336]
+    Hinjewadi:     [18.5920497, 73.7579029]
+    Katraj:        [18.4536792, 73.8563196]
+    "Koregaon Park": [18.5366225, 73.8932738]
+    Kothrud:       [18.5072618, 73.8056676]
+    Hadapsar:      [18.5007741, 73.9379146]
+    Baner:         [18.5589937, 73.7845232]
+    Swargate:      [18.4986771, 73.8578427]
+    "Nal Stop":    [18.5098000, 73.8248000]
+
+# ── File Paths ────────────────────────────────────────────────────────────────
+paths:
+  subgraph:            "graph/subgraph.pkl"
+  kothrud_graph:       "graph/kothrud_graph.pkl"
+  full_pune_graph:     "graph/graph_data.pkl"
+  traffic_data:        "data/traffic_data.npy"
+  full_traffic_data:   "data/pune_traffic_data.npy"
+  model_weights:       "ml/traffic_model.pth"
+  scaler:              "ml/scaler.pkl"
+  training_history:    "ml/training_history.pkl"
+  test_metrics:        "ml/test_metrics.pkl"
+  ablation_results:    "ml/ablation_results.json"
+
+# ── API Server ────────────────────────────────────────────────────────────────
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 1              # keep at 1; PyTorch model is not fork-safe without care
+  reload: false           # set true during development
